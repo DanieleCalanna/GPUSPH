@@ -47,6 +47,8 @@ export GPUSPH_VERSION
 platform=$(shell uname -s 2>/dev/null)
 platform_lcase=$(shell uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
 arch=$(shell uname -m)
+# check if running on the Windows Subsystem for Linux
+wsl=$(shell uname -r 2>/dev/null | grep Microsoft > /dev/null ; echo $$((1 - $$?)))
 
 # sed syntax differs a bit
 ifeq ($(platform), Darwin)
@@ -936,6 +938,7 @@ showobjs:
 show:
 	@echo "GPUSPH version:  $(GPUSPH_VERSION)"
 	@echo "Platform:        $(platform)"
+	@echo "WSL:             $(wsl)"
 	@echo "Architecture:    $(arch)"
 	@echo "Current dir:     $(CURDIR)"
 	@echo "This Makefile:   $(MAKEFILE)"
