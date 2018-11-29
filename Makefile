@@ -488,14 +488,16 @@ LIB_PATH_SFX =
 # override: TARGET_ARCH - set the target architecture
 # override:               defaults to -m64 for 64-bit machines
 # override:                           -m32 for 32-bit machines
-ifeq ($(arch), x86_64)
-	TARGET_ARCH ?= -m64
-	# on Linux, toolkit libraries are under /lib64 for 64-bit
-	ifeq ($(platform), Linux)
-		LIB_PATH_SFX = 64
+ifeq ($(wsl), 0)
+	ifeq ($(arch), x86_64)
+		TARGET_ARCH ?= -m64
+		# on Linux, toolkit libraries are under /lib64 for 64-bit
+		ifeq ($(platform), Linux)
+			LIB_PATH_SFX = 64
+		endif
+	else # i386 or i686
+		TARGET_ARCH ?= -m32
 	endif
-else # i386 or i686
-	TARGET_ARCH ?= -m32
 endif
 
 # override: INCPATH - paths for include files
@@ -660,6 +662,13 @@ CXXFLAGS ?=
 # override: CUFLAGS - nvcc compiler options
 CUFLAGS  ?=
 
+# flag to produce the obj file only for C++ compiler
+ifeq ($(wsl), 1)
+	OBJ_OUT=/Fo
+else
+	OBJ_OUT=-c -o
+endif
+
 # First of all, put the include paths into the CPPFLAGS
 CPPFLAGS += $(INCPATH)
 
@@ -696,7 +705,9 @@ CXXFLAGS += $(TARGET_ARCH)
 # We also force C++11 mode, since we are no relying on C++11 features
 # TODO Check if any -std is present in CXXFLAGS (added by the user) and if
 # the specified value is not 11, warn before removing it
-CXXFLAGS += -std=c++11
+ifeq ($(wsl), 0)
+	CXXFLAGS += -std=c++11
+endif
 
 # HDF5 might require specific flags
 ifneq ($(USE_HDF5),0)
@@ -735,7 +746,11 @@ ifeq ($(dbg), 1)
 	CXXFLAGS += -g
 	CUFLAGS  += -G
 else
-	CXXFLAGS += -O3
+	ifeq ($(wsl), 1)
+		CXXFLAGS += /Ox
+	else
+		CXXFLAGS += -O3
+	endif
 endif
 
 # option: verbose - 0 quiet compiler, 1 ptx assembler, 2 all warnings
@@ -878,11 +893,11 @@ $(SRCDIR)/describe-debugflags.h: $(SCRIPTSDIR)/describe-debugflags.awk $(SRCDIR)
 # compile CPU objects
 $(CCOBJS): $(OBJDIR)/%.o: $(SRCDIR)/%.cc $(CHRONO_SELECT_OPTFILE) | $(OBJSUBS)
 	$(call show_stage,CC,$(@F))
-	$(CMDECHO)$(CXX) $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
+	$(CMDECHO)$(CXX) $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) $(OBJ_OUT)$@ $<
 
 $(MPICXXOBJS): $(OBJDIR)/%.o: $(SRCDIR)/%.cc | $(OBJSUBS)
 	$(call show_stage,MPI,$(@F))
-	$(CMDECHO)OMPI_CXX=$(CXX) MPICH_CXX=$(CXX) $(MPICXX) $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
+	$(CMDECHO)OMPI_CXX=$(CXX) MPICH_CXX=$(CXX) $(MPICXX) $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) $(OBJ_OUT)$@ $<
 
 # compile GPU objects
 $(CUOBJS): $(OBJDIR)/%.o: $(SRCDIR)/%.cu $(COMPUTE_SELECT_OPTFILE) $(FASTMATH_SELECT_OPTFILE) $(CHRONO_SELECT_OPTFILE) | $(OBJSUBS)
