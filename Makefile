@@ -1206,6 +1206,10 @@ FORCE:
 # "sinclude" instead of "include" tells make not to print errors if files are missing.
 # This is necessary because during the first processing of the makefile, make complains
 # before creating them.
-sinclude $(GPUDEPS)
-sinclude $(CPUDEPS)
+
+# not supported in wsl for now
+ifeq ($(wsl), 0)
+	sinclude $(GPUDEPS)
+	sinclude $(CPUDEPS)
+endif
 
