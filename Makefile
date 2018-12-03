@@ -143,11 +143,19 @@ PROBLEM_SRCS = $(foreach adir, $(PROBLEM_DIR) $(USER_PROBLEM_DIR), \
 		$(adir)/$(PROBLEM)_BC.cu,\
 		$(wildcard $(adir)/*)))
 
-# list of .cc files, exclusing MPI sources and disabled problems
-CCFILES = $(filter-out $(PROBLEM_FILTER),\
-	  $(filter-out $(MPICXXFILES),\
-	  $(foreach adir, $(SRCDIR) $(SRCSUBS),\
-	  $(wildcard $(adir)/*.cc))))
+# The UDP writer is not supported in Windows at the moment
+ifeq ($(wsl),1)
+	UNSUPPORTED_CC=$(SRCDIR)/writers/UDPWriter.cc
+else
+	UNSUPPORTED_CC=
+endif
+
+ # list of .cc files, exclusing MPI sources and disabled problems
+CCFILES = $(filter-out $(UNSUPPORTED_CC),\
+	  $(filter-out $(PROBLEM_FILTER),\
+ 	  $(filter-out $(MPICXXFILES),\
+ 	  $(foreach adir, $(SRCDIR) $(SRCSUBS),\
+	  $(wildcard $(adir)/*.cc)))))
 
 
 # GPU source files: we only directly compile the current problem (if it's CUDA),
