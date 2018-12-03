@@ -33,6 +33,7 @@
 #include <array>
 #include <map>
 #include <set>
+#include <string>
 
 #include <stdexcept>
 
