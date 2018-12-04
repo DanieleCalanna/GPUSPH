@@ -302,23 +302,23 @@ write_energy(EP const& params, P &pdata, int index)
  * 2.) open boundaries (as this sets eulerVel = 0 for fluid)
  */
 template<typename EP>
-constexpr bool needs_eulerVel()
+struct needs_eulerVel
 {
-	return EP::has_keps ||
-		(EP::boundarytype == SA_BOUNDARY &&
-		 (EP::simflags & ENABLE_INLET_OUTLET));
-}
+	constexpr static bool value = EP::has_keps ||
+ 		(EP::boundarytype == SA_BOUNDARY &&
+ 		(EP::simflags & ENABLE_INLET_OUTLET));
+};
 
 template<typename EP, typename P>
 __device__ __forceinline__
-enable_if_t<needs_eulerVel<EP>()>
+enable_if_t<needs_eulerVel<EP>::value>
 write_eulerVel(EP const& params, P &pdata, int index)
 {
 	params.newEulerVel[index] = pdata.eulerVel;
 }
 template<typename EP, typename P>
 __device__ __forceinline__
-enable_if_t<not needs_eulerVel<EP>()>
+enable_if_t<not needs_eulerVel<EP>::value>
 write_eulerVel(EP const& params, P &pdata, int index)
 { /* do nothing*/ }
 
