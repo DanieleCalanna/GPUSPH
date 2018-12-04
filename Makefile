@@ -568,12 +568,14 @@ ifneq ($(USE_HDF5),0)
 	LIBS += $(HDF5_LD)
 endif
 
-# pthread needed for the UDP writer
-LIBS += -lpthread
+ifeq ($(wsl), 0)
+	# pthread needed for the UDP writer but not for MSVC
+	LIBS += -lpthread
 
-# Realtime Extensions library (for clock_gettime) (not on Mac)
-ifneq ($(platform), Darwin)
-	LIBS += -lrt
+	# Realtime Extensions library (for clock_gettime) (not on Mac and Windows)
+	ifneq ($(platform), Darwin)
+		LIBS += -lrt
+	endif
 endif
 
 # search paths are platform-specific
