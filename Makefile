@@ -74,11 +74,15 @@ else
 	TARGET_SFX=
 endif
 
-# on Windows, executables have .exe extension
+# File extensions:
+# - Executables have .exe extension on Windows
+# - Object file is .obj on MSVC and .o on gcc
 ifeq ($(wsl), 1)
 	EXE_SFX=.exe
+	OBJ_EXT=.obj
 else
 	EXE_SFX=
+	OBJ_EXT=.o
 endif
 
 # directories: binary, objects, sources, expanded sources
@@ -166,9 +170,9 @@ CUFILES = $(filter %.cu,$(PROBLEM_SRCS))
 HEADERS = $(foreach adir, $(SRCDIR) $(SRCSUBS),$(wildcard $(adir)/*.h))
 
 # object files via filename replacement
-MPICXXOBJS = $(patsubst %.cc,$(OBJDIR)/%.o,$(notdir $(MPICXXFILES)))
-CCOBJS = $(patsubst $(SRCDIR)/%.cc,$(OBJDIR)/%.o,$(CCFILES)) $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(CPPFILES))
-CUOBJS = $(patsubst $(SRCDIR)/%.cu,$(OBJDIR)/%.o,$(CUFILES))
+MPICXXOBJS = $(patsubst %.cc,$(OBJDIR)/%$(OBJ_EXT),$(notdir $(MPICXXFILES)))
+CCOBJS = $(patsubst $(SRCDIR)/%.cc,$(OBJDIR)/%$(OBJ_EXT),$(CCFILES)) $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%$(OBJ_EXT),$(CPPFILES))
+CUOBJS = $(patsubst $(SRCDIR)/%.cu,$(OBJDIR)/%$(OBJ_EXT),$(CUFILES))
 
 OBJS = $(CCOBJS) $(MPICXXOBJS) $(CUOBJS)
 
@@ -927,19 +931,19 @@ $(SRCDIR)/describe-debugflags.h: $(SCRIPTSDIR)/describe-debugflags.awk $(SRCDIR)
 	$(CMDECHO)awk -f $^ > $@
 
 # compile CPU objects
-$(CCOBJS): $(OBJDIR)/%.o: $(SRCDIR)/%.cc $(CHRONO_SELECT_OPTFILE) | $(OBJSUBS)
+$(CCOBJS): $(OBJDIR)/%$(OBJ_EXT): $(SRCDIR)/%.cc $(CHRONO_SELECT_OPTFILE) | $(OBJSUBS)
 	$(call show_stage,CC,$(@F))
 	$(CMDECHO)$(CXX) $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) $(OBJ_OUT)$@ $<
 
-$(MPICXXOBJS): $(OBJDIR)/%.o: $(SRCDIR)/%.cc | $(OBJSUBS)
+$(MPICXXOBJS): $(OBJDIR)/%$(OBJ_EXT): $(SRCDIR)/%.cc | $(OBJSUBS)
 	$(call show_stage,MPI,$(@F))
 	$(CMDECHO)OMPI_CXX=$(CXX) MPICH_CXX=$(CXX) $(MPICXX) $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) $(OBJ_OUT)$@ $<
 
 # compile GPU objects
-$(CUOBJS): $(OBJDIR)/%.o: $(SRCDIR)/%.cu $(COMPUTE_SELECT_OPTFILE) $(FASTMATH_SELECT_OPTFILE) $(CHRONO_SELECT_OPTFILE) | $(OBJSUBS)
+$(CUOBJS): $(OBJDIR)/%$(OBJ_EXT): $(SRCDIR)/%.cu $(COMPUTE_SELECT_OPTFILE) $(FASTMATH_SELECT_OPTFILE) $(CHRONO_SELECT_OPTFILE) | $(OBJSUBS)
 	$(call show_stage,CU,$(@F))
 	$(CMDECHO)$(NVCC) $(CPPFLAGS) $(CUFLAGS) -c -o $@ $<
-$(OBJDIR)/cuda/%.o: $(SRCDIR)/cuda/%.cu $(COMPUTE_SELECT_OPTFILE) $(FASTMATH_SELECT_OPTFILE) $(CHRONO_SELECT_OPTFILE) | $(OBJSUBS)
+$(OBJDIR)/cuda/%$(OBJ_EXT): $(SRCDIR)/cuda/%.cu $(COMPUTE_SELECT_OPTFILE) $(FASTMATH_SELECT_OPTFILE) $(CHRONO_SELECT_OPTFILE) | $(OBJSUBS)
 	$(call show_stage,CU,$(@F))
 	$(CMDECHO)$(NVCC) $(CPPFLAGS) $(CUFLAGS) -c -o $@ $<
 
@@ -1135,7 +1139,7 @@ $(GPUDEPS): $(CUFILES) Makefile.conf | $(CHRONO_SELECT_OPTFILE)
 	$(CMDECHO)echo '# GPU sources dependencies generated with "make deps"' > $@
 	$(CMDECHO)for srcfile in $(filter-out Makefile.conf,$^) ; do \
 		objfile="$(OBJDIR)/$${srcfile#$(SRCDIR)/}" ; \
-		objfile="$${objfile%.*}.o" ; \
+		objfile="$${objfile%.*}$(OBJ_EXT)" ; \
 		$(CXX) -x c++ \
 			-D__CUDA_INTERNAL_COMPILATION__ $(CC_INCPATH) $(CPPFLAGS) \
 			$(filter -D%,$(CUFLAGS)) $(CXXFLAGS) \
@@ -1147,7 +1151,7 @@ $(CPUDEPS): $(CCFILES) $(MPICXXFILES) Makefile.conf | $(AUTOGEN_SRC) $(CHRONO_SE
 	$(CMDECHO)echo '# CPU sources dependencies generated with "make deps"' > $@
 	$(CMDECHO)for srcfile in $(filter-out Makefile.conf,$^) ; do \
 		objfile="$(OBJDIR)/$${srcfile#$(SRCDIR)/}" ; \
-		objfile="$${objfile%.*}.o" ; \
+		objfile="$${objfile%.*}$(OBJ_EXT)" ; \
 		OMPI_CXX=$(CXX) MPICH_CXX=$(CXX) $(MPICXX) $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) \
 		-MG -MM $$srcfile -MT $$objfile >> $@ ; \
 		done
