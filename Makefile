@@ -1245,7 +1245,7 @@ FORCE:
 
 # not supported in wsl for now
 ifeq ($(wsl), 0)
-	sinclude $(GPUDEPS)
-	sinclude $(CPUDEPS)
+sinclude $(GPUDEPS)
+sinclude $(CPUDEPS)
 endif
 
