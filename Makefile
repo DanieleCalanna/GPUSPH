@@ -1134,6 +1134,7 @@ Makefile.conf: Makefile $(OPTFILES)
 # This is particularly important to ensure that `make compile-problems` works correctly.
 # Of course, Makefile.conf has to be stripped from the list of dependencies before passing them
 # to the loop that builds the deps.
+ifeq ($(wsl), 0)
 $(GPUDEPS): $(CUFILES) Makefile.conf | $(CHRONO_SELECT_OPTFILE)
 	$(call show_stage,DEPS,GPU)
 	$(CMDECHO)echo '# GPU sources dependencies generated with "make deps"' > $@
@@ -1145,7 +1146,30 @@ $(GPUDEPS): $(CUFILES) Makefile.conf | $(CHRONO_SELECT_OPTFILE)
 			$(filter -D%,$(CUFLAGS)) $(CXXFLAGS) \
 		-MG -MM $$srcfile -MT $$objfile >> $@ ; \
 		done
+else
+$(GPUDEPS): $(CUFILES) Makefile.conf | $(CHRONO_SELECT_OPTFILE)
+	$(call show_stage,DEPS,GPU)
+	$(CMDECHO)echo '# GPU sources dependencies generated with "make deps"' > $@
+	$(CMDECHO)for srcfile in $(filter-out Makefile.conf,$^) ; do \
+		objfile="$(OBJDIR)/$${srcfile#$(SRCDIR)/}" ; \
+		objfile="$${objfile%.*}$(OBJ_EXT)" ; \
+		echo $$objfile: $$srcfile | tr '\r\n' ' ' >> $@ ; \
+		$(NVCC) $(CPPFLAGS) $(CUFLAGS),/w,/showIncludes -c -o $$objfile $$srcfile \
+		2>&1 | \
+		tr '\\' '/' | \
+		grep -i $${PWD##*/}/ | \
+		while read -r line ; do \
+			echo $$line |\
+			sed -e "s/.*\\($${PWD##*/}\/\\)/\\1/Ig"\
+				-e "s/$${PWD##*/}\///I" |\
+			tr '\r\n' ' '\
+			>> $@ ; \
+		done;\
+		echo >> $@ ; \
+		done
+endif
 
+ifeq ($(wsl), 0)
 $(CPUDEPS): $(CCFILES) $(MPICXXFILES) Makefile.conf | $(AUTOGEN_SRC) $(CHRONO_SELECT_OPTFILE)
 	$(call show_stage,DEPS,CPU)
 	$(CMDECHO)echo '# CPU sources dependencies generated with "make deps"' > $@
@@ -1155,6 +1179,27 @@ $(CPUDEPS): $(CCFILES) $(MPICXXFILES) Makefile.conf | $(AUTOGEN_SRC) $(CHRONO_SE
 		OMPI_CXX=$(CXX) MPICH_CXX=$(CXX) $(MPICXX) $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) \
 		-MG -MM $$srcfile -MT $$objfile >> $@ ; \
 		done
+else
+$(CPUDEPS): $(CCFILES) $(MPICXXFILES) Makefile.conf | $(AUTOGEN_SRC) $(CHRONO_SELECT_OPTFILE)
+	$(call show_stage,DEPS,CPU)
+	$(CMDECHO)echo '# CPU sources dependencies generated with "make deps"' > $@
+	$(CMDECHO)for srcfile in $(filter-out Makefile.conf,$^) ; do \
+		objfile="$(OBJDIR)/$${srcfile#$(SRCDIR)/}" ; \
+		objfile="$${objfile%.*}$(OBJ_EXT)" ; \
+		echo $$objfile: $$srcfile | tr '\r\n' ' ' >> $@ ; \
+		$(CXX) /w /showIncludes $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) $(OBJ_OUT)$$objfile /Tp$$srcfile | \
+		tr '\\' '/' | \
+		grep -i $${PWD##*/}/ | \
+		while read -r line ; do \
+			echo $$line |\
+			sed -e "s/.*\\($${PWD##*/}\/\\)/\\1/Ig"\
+				-e "s/$${PWD##*/}\///I" |\
+			tr '\r\n' ' '\
+			>> $@ ; \
+		done;\
+		echo >> $@ ; \
+		done
+endif
 
 # TODO docs should also build the user-guide, but since we don't ship images
 # this can't be normally done, so let's not include this for the time being.
@@ -1247,9 +1292,6 @@ FORCE:
 # This is necessary because during the first processing of the makefile, make complains
 # before creating them.
 
-# not supported in wsl for now
-ifeq ($(wsl), 0)
 sinclude $(GPUDEPS)
 sinclude $(CPUDEPS)
-endif
 
