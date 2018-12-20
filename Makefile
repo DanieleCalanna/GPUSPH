@@ -88,6 +88,7 @@ endif
 # directories: binary, objects, sources, expanded sources
 DISTDIR = dist/$(platform_lcase)/$(arch)
 OBJDIR = build
+DEPDIR = dep
 SRCDIR = src
 EXPDIR = $(SRCDIR)/expanded
 SCRIPTSDIR = scripts
@@ -125,6 +126,7 @@ USER_PROBLEM_DIR=$(SRCDIR)/problems/user
 SRCSUBS=$(sort $(filter %/,$(wildcard $(SRCDIR)/*/)))
 SRCSUBS:=$(SRCSUBS:/=)
 OBJSUBS=$(patsubst $(SRCDIR)/%,$(OBJDIR)/%,$(SRCSUBS) $(USER_PROBLEM_DIR))
+DEPSUBS=$(patsubst $(SRCDIR)/%,$(DEPDIR)/%,$(SRCSUBS) $(USER_PROBLEM_DIR))
 
 # list of problems
 PROBLEM_LIST = $(foreach adir, $(PROBLEM_DIR) $(USER_PROBLEM_DIR), \
@@ -172,9 +174,12 @@ HEADERS = $(foreach adir, $(SRCDIR) $(SRCSUBS),$(wildcard $(adir)/*.h))
 # object files via filename replacement
 MPICXXOBJS = $(patsubst %.cc,$(OBJDIR)/%$(OBJ_EXT),$(notdir $(MPICXXFILES)))
 CCOBJS = $(patsubst $(SRCDIR)/%.cc,$(OBJDIR)/%$(OBJ_EXT),$(CCFILES)) $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%$(OBJ_EXT),$(CPPFILES))
+CCDEPS = $(patsubst $(SRCDIR)/%.cc,$(DEPDIR)/%.d,$(CCFILES)) $(patsubst $(SRCDIR)/%.cpp,$(DEP_DIR)/%.d,$(CPPFILES))
 CUOBJS = $(patsubst $(SRCDIR)/%.cu,$(OBJDIR)/%$(OBJ_EXT),$(CUFILES))
+CUDEPS = $(patsubst $(SRCDIR)/%.cu,$(DEPDIR)/%.d,$(CUFILES))
 
 OBJS = $(CCOBJS) $(MPICXXOBJS) $(CUOBJS)
+DEPS = $(CCDEPS) $(CUDEPS)
 
 # data files needed by some problems
 EXTRA_PROBLEM_FILES ?=
@@ -947,6 +952,22 @@ $(CCOBJS): $(OBJDIR)/%$(OBJ_EXT): $(SRCDIR)/%.cc $(CHRONO_SELECT_OPTFILE) | $(OB
 	$(call show_stage,CC,$(@F))
 	$(CMDECHO)$(CXX) $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) $(OBJ_OUT)$@ $<
 
+# create CPU dependencies
+$(CCDEPS): $(DEPDIR)/%.d: $(SRCDIR)/%.cc $(CHRONO_SELECT_OPTFILE) | $(DEPSUBS)
+	@echo $@
+	$(CMDECHO)printf '%s\r' "$(patsubst $(DEPDIR)/%.d,$(OBJDIR)/%$(OBJ_EXT),$@) $@: $<" | tr '\r\n' ' ' > $@;
+	$(CMDECHO)-clout="$$($(CXX) $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) /w $< /Zs /showIncludes)" && \
+	printf '%s\r' "$$clout" | tr '\\' '/' | \
+	grep -i "$${PWD##*/}/" | \
+	while read -r line ; do \
+		printf '%s\r' $$line | \
+		sed -e "s/.*\\($${PWD##*/}\/\\)/\\1/Ig" \
+			-e "s/$${PWD##*/}\///I" | \
+		tr '\r\n' ' ' \
+		>> $@ ; \
+	done;
+	@echo >> $@
+
 $(MPICXXOBJS): $(OBJDIR)/%$(OBJ_EXT): $(SRCDIR)/%.cc | $(OBJSUBS)
 	$(call show_stage,MPI,$(@F))
 	$(CMDECHO)OMPI_CXX=$(CXX) MPICH_CXX=$(CXX) $(MPICXX) $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) $(OBJ_OUT)$@ $<
@@ -958,6 +979,14 @@ $(CUOBJS): $(OBJDIR)/%$(OBJ_EXT): $(SRCDIR)/%.cu $(COMPUTE_SELECT_OPTFILE) $(FAS
 $(OBJDIR)/cuda/%$(OBJ_EXT): $(SRCDIR)/cuda/%.cu $(COMPUTE_SELECT_OPTFILE) $(FASTMATH_SELECT_OPTFILE) $(CHRONO_SELECT_OPTFILE) | $(OBJSUBS)
 	$(call show_stage,CU,$(@F))
 	$(CMDECHO)$(NVCC) $(CPPFLAGS) $(CUFLAGS) -c -o $@ $<
+
+# create GPU dependencies
+$(CUDEPS): $(DEPDIR)/%.d: $(SRCDIR)/%.cu $(COMPUTE_SELECT_OPTFILE) $(FASTMATH_SELECT_OPTFILE) $(CHRONO_SELECT_OPTFILE) | $(DEPSUBS)
+	@echo $@
+	$(CMDECHO)-clout="$$($(NVCC) $(CPPFLAGS) $(CUFLAGS) -M $< -MT $(patsubst $(DEPDIR)/%.d,$(OBJDIR)/%$(OBJ_EXT),$@) -ddp /mnt/)" && \
+	printf '%s\r' "$$clout" | tr '[:upper:]' '[:lower:]' >> $@;
+	@sed -i 's,\($*\)\$(OBJ_EXT)[ :]*,\1$(OBJ_EXT) $@: ,g' $@;
+	@echo >> $@;
 
 # compile program to list compute capabilities of installed devices.
 # Filter out all architecture specification flags (-arch=sm_*), since they
@@ -976,9 +1005,16 @@ $(DISTDIR):
 $(OBJDIR) $(OBJSUBS):
 	$(CMDECHO)mkdir -p $(OBJDIR) $(OBJSUBS)
 
+# create depdir and subs
+$(DEPDIR) $(DEPSUBS):
+	$(CMDECHO)mkdir -p $(DEPDIR) $(DEPSUBS)
+
 # create optsdir
 $(OPTSDIR):
 	$(CMDECHO)mkdir -p $(OPTSDIR)
+
+#We don't need to include dependencies when we're making these targets
+NODEPS := clean show cpuclean gpuclean computeclean cookiesclean confclean
 
 # target: clean - Clean everything but last compile choices
 # clean: cpuobjs, gpuobjs, deps makefiles, target, target symlink, dbg target
@@ -989,11 +1025,11 @@ clean: cpuclean gpuclean
 
 # target: cpuclean - Clean CPU stuff
 cpuclean:
-	$(RM) $(CCOBJS) $(MPICXXOBJS) $(CPUDEPS)
+	$(RM) $(CCOBJS) $(MPICXXOBJS) $(CPUDEPS) $(CCDEPS)
 
 # target: gpuclean - Clean GPU stuff
 gpuclean: computeclean
-	$(RM) $(CUOBJS) $(GPUDEPS)
+	$(RM) $(CUOBJS) $(GPUDEPS) $(CUDEPS)
 
 # target: computeclean - Clean compute capability selection stuff
 computeclean:
@@ -1092,8 +1128,10 @@ expand:
 		$(SRCDIR)/forces_kernel.cu -o $(EXPDIR)/forces_kernel.expand.cc && \
 	echo "euler* and forces* expanded in $(EXPDIR)."
 
+.PRECIOUS: $(DEP_DIR)/%.d
+
 # target: deps - Update dependencies in $(MAKEFILE)
-deps: $(GPUDEPS) $(CPUDEPS)
+deps: $(DEPS)
 	@true
 
 # We want all of the OPTFILES to be built before anything else, which we achieve by
@@ -1158,27 +1196,6 @@ $(GPUDEPS): $(CUFILES) Makefile.conf | $(CHRONO_SELECT_OPTFILE)
 			$(filter -D%,$(CUFLAGS)) $(CXXFLAGS) \
 		-MG -MM $$srcfile -MT $$objfile >> $@ ; \
 		done
-else
-$(GPUDEPS): $(CUFILES) Makefile.conf | $(CHRONO_SELECT_OPTFILE)
-	$(call show_stage,DEPS,GPU)
-	$(CMDECHO)echo '# GPU sources dependencies generated with "make deps"' > $@
-	$(CMDECHO)for srcfile in $(filter-out Makefile.conf,$^) ; do \
-		objfile="$(OBJDIR)/$${srcfile#$(SRCDIR)/}" ; \
-		objfile="$${objfile%.*}$(OBJ_EXT)" ; \
-		echo $$objfile: $$srcfile | tr '\r\n' ' ' >> $@ ; \
-		$(NVCC) $(CPPFLAGS) $(CUFLAGS),/w,/showIncludes -c -o $$objfile $$srcfile \
-		2>&1 | \
-		tr '\\' '/' | \
-		grep -i $${PWD##*/}/ | \
-		while read -r line ; do \
-			echo $$line |\
-			sed -e "s/.*\\($${PWD##*/}\/\\)/\\1/Ig"\
-				-e "s/$${PWD##*/}\///I" |\
-			tr '\r\n' ' '\
-			>> $@ ; \
-		done;\
-		echo >> $@ ; \
-		done
 endif
 
 ifeq ($(wsl), 0)
@@ -1190,26 +1207,6 @@ $(CPUDEPS): $(CCFILES) $(MPICXXFILES) Makefile.conf | $(AUTOGEN_SRC) $(CHRONO_SE
 		objfile="$${objfile%.*}$(OBJ_EXT)" ; \
 		OMPI_CXX=$(CXX) MPICH_CXX=$(CXX) $(MPICXX) $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) \
 		-MG -MM $$srcfile -MT $$objfile >> $@ ; \
-		done
-else
-$(CPUDEPS): $(CCFILES) $(MPICXXFILES) Makefile.conf | $(AUTOGEN_SRC) $(CHRONO_SELECT_OPTFILE)
-	$(call show_stage,DEPS,CPU)
-	$(CMDECHO)echo '# CPU sources dependencies generated with "make deps"' > $@
-	$(CMDECHO)for srcfile in $(filter-out Makefile.conf,$^) ; do \
-		objfile="$(OBJDIR)/$${srcfile#$(SRCDIR)/}" ; \
-		objfile="$${objfile%.*}$(OBJ_EXT)" ; \
-		echo $$objfile: $$srcfile | tr '\r\n' ' ' >> $@ ; \
-		$(CXX) /w /showIncludes $(CC_INCPATH) $(CPPFLAGS) $(CXXFLAGS) $(OBJ_OUT)$$objfile /Tp$$srcfile | \
-		tr '\\' '/' | \
-		grep -i $${PWD##*/}/ | \
-		while read -r line ; do \
-			echo $$line |\
-			sed -e "s/.*\\($${PWD##*/}\/\\)/\\1/Ig"\
-				-e "s/$${PWD##*/}\///I" |\
-			tr '\r\n' ' '\
-			>> $@ ; \
-		done;\
-		echo >> $@ ; \
 		done
 endif
 
@@ -1304,6 +1301,12 @@ FORCE:
 # This is necessary because during the first processing of the makefile, make complains
 # before creating them.
 
-sinclude $(GPUDEPS)
-sinclude $(CPUDEPS)
+#sinclude $(GPUDEPS)
+#sinclude $(CPUDEPS)
 
+#Don't create dependencies when we're cleaning, for instance
+ifeq ($(filter $(MAKECMDGOALS), $(NODEPS)),)
+    #Chances are, these files don't exist. GMake will create them and
+    #clean up automatically afterwards
+-include $(DEPS)
+endif
