@@ -619,6 +619,13 @@ Problem::check_dt(void)
 				dt_from_sspeed, dt_from_gravity, dt_from_visc);
 	}
 
+	// warn if dt was set by the user but adaptive dt is enable
+	if (simparams()->dt && simparams()->simflags & ENABLE_DTADAPT)
+	{
+		fprintf(stderr, "WARNING: dt %g will be used only for the first iteration because adaptive dt is enabled\n",
+			simparams()->dt);
+	}
+
 }
 
 void
